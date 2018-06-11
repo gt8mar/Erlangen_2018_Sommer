@@ -1,55 +1,49 @@
-% Luis Torres
+% Luis Torres and Marcus Forst
 % luis.torres@fau.de
-% 
+% marcus.forst@temple.edu 
+%
 % This code is wrote to grab the coodinates in pixels given as
 % by a *.rek file (the reconstructed object)
 % 
-% Updated at 19.05.2018
+% Updated 11.06.2018 by Marcus Forst
 
 clear all;
 close all;
 clc;
 
 dimX = 960;
-dimY = 960;
-%dimZ = 406;
-dimZ = 381;
-
-p1 = 0.0368;
-p2 = -33.47;
-p3 = 3.532.*10.^4;
-
-x = [0:960];
-f = p1.*x.^2 + p2.*x + p3;
+dimY = 960;        
+dimZ = 347;                                                                 % Here give the number of cuts as your z dimension
 
 % IMPORT one *.rek file
-vol_raw = ReadRek('prapanch_pouring_1mm_glassBeads_180518_test5.rek', dimX, dimY, dimZ);
+vol_raw = ReadRek('prapanch_pouring_1mm_glassBeads_230518_test8.rek', dimX, dimY, dimZ);
 fig1 = figure(1);
 imshow(vol_raw(:,:,77))
 
 ii_0 = floor(dimX./2) ;
-jj_0 = floor(dimY./2) + floor(0.02*dimX);
+jj_0 = floor(dimY./2) ;                                  
 
-%R = floor(882./2);
-R = floor(782./2);
+R = floor(782./2);                                                          
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Binarization (make it black and white)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % At this point we should look for the right "threshold value".
-% Achtung! the threshold gray value cannot be obtained from a 3D object, that's why
-% firstable we should reshape or 3D object vol_raw with reshape(*.rek,dimX*dimZ,dimY)
+% Achtung! The threshold gray value cannot be obtained from a 3D object, 
+% that's why first we should reshape our 3D object vol_raw with 
+% reshape(*.rek,dimX*dimZ,dimY)
 
 vol_2D = reshape(vol_raw, dimX*dimZ, dimY);
+clear vol_raw;
 
-%Normally it is used the Otsu method 
-%threshold = graythresh(vol_2D)
-
+% We choose this threshold based on what gives us the most clear image
 threshold = 0.44;
-%threshold is a function of radius
+vol_bw = imbinarize(vol_2D,threshold);
+clear vol_2D;
 
-vol_bw = im2bw(vol_2D,threshold);
-
-%now we shall come back to our 3D object
-%vol_3D = reshape(vol_2D, 960, 960, 406);
+% Now we shall come back to our 3D object
 vol_3D = reshape(vol_bw, dimX, dimY, dimZ);
+clear vol_bw;
 
 for ii = 1: dimX
       for jj = 1: dimY
@@ -57,42 +51,80 @@ for ii = 1: dimX
           r = sqrt( (ii - ii_0).^2 + (jj - jj_0).^2  );
    
           if (r > R) 
-              vol_3D(ii,jj,:) = 0.0;
+              vol_3D(ii,jj,:) = 0;
           end
          
       end
 end
 
+clear R
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Euclidean Distance Map (Figure out the radius of the particles by seeing
+% how far their center is from the outside)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Switch Polarization and make EDM
+vol_3D = imcomplement(vol_3D);
 vol_3D_EDM = bwdist(vol_3D,'euclidean');
 
-vol_3D_EDM = vol_3D;
+% Contour map showing EDM gradient
+fig5 = figure(5);
+imcontour(vol_3D_EDM(:,:,77))
+%dlmwrite('EDM.csv',vol_3D_EDM)
 
-%is quite useful to see at each step one of our figures with imshow
+% Here we return to the original vol_3D data in order to begin eroding
+vol_3D_EDM = imcomplement(vol_3D);
+
+% Initial Binary (Black and white) image
 fig2 = figure(2);
 imshow(vol_3D_EDM(:,:,77))
 
-%now the erosion proces
-%firstable we should create a cube the number is the size of the cube in pixels
-SE = strel('cube',4);
 
-%this cube is gona erode our image
-vol_erode = imerode(vol_3D_EDM, SE);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% EROSION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%now we should label our particles
+% We erode using a sphere. # is the size of the radius in pixels         
+SE = strel('sphere',3);                                                    
+vol_erode = imerode(vol_3D_EDM, SE);                                        
+clear vol_3D_EDM;                                                           
+clear vol_3D;                                                                            
+
+% Label our particles
 vol_label = bwlabeln(vol_erode(:,:,:)); 
+clear vol_erode;
 
-%see your particles one more time
+% Particles after erosion, each has a different color
 fig3 = figure(3);
 imshow(label2rgb(vol_label(:,:,77),@lines))
 
-%now the centoids
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Centroids
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Creates an array of centroid coordinates
 s = regionprops(vol_label(:,:,:),'centroid')
+centroids = cat(1, s.Centroid);
+clear vol_label
+clear s
 
-%the last step is plotting your particles 
-%bubbleplot3(x, y, z, r, color)
+% Write a file with the centroid coordinates
+dlmwrite('Test8Cent.csv', centroids)
 
-%with this lines we print the coordinates
-%dlmwrite(['tracersTEST.data'],tracers)
+% Plot the centroids on a 3D plot
+fig4 = figure(4);
+scatter3(centroids(:,1), centroids(:,2), centroids(:,3), 1)
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Optional, expensive bubbleplot of one layer; I do not recommend using a
+% lot of iterations here
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% fig5= figure(5);
+% hold on
+% for aa = 1:3000
+%    bubbleplot3(centroids(aa,1), centroids(aa,2), centroids(aa,3), 5)
+% end
 
 
